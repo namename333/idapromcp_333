@@ -58,7 +58,7 @@ IDA Pro MCP 是一款集成 LLM（大语言模型）与 IDA Pro 的智能逆向�
 （记得使用ida自带的python哦）
 #### （1）克隆本项目
 ```bash
-git clone https://github.com/namename333/ida-pro-mcp-main.git
+git clone https://github.com/namename333/idapromcp_333.git
 cd ida-pro-mcp-main
 ```
 
