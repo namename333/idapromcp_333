@@ -55,7 +55,7 @@ IDA Pro MCP 是一款集成 LLM（大语言模型）与 IDA Pro 的智能逆向�
 - **依赖包**：`mcp>=1.6.0`（已在 pyproject.toml 中声明）
 
 ### 2. 安装步骤
-
+（记得使用ida自带的python哦）
 #### （1）克隆本项目
 ```bash
 git clone https://github.com/namename333/ida-pro-mcp-main.git
@@ -140,7 +140,11 @@ python -m ida_pro_mcp.server --install
 2. 使用下划线命名法
 3. 避免过于冗长（控制在30字符以内）
 ```
-
+### 4. 人话
+```text
+尝试加入了一些去混淆，和现有脚本，判断加密，生成文档等。
+后续有机会再持续更新
+```
 ---
 
 ## ⚙️ 高级用法
