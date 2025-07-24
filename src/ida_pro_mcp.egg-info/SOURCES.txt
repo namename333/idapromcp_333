@@ -1,0 +1,13 @@
+LICENSE
+README.md
+pyproject.toml
+src/ida_pro_mcp/__init__.py
+src/ida_pro_mcp/idalib_server.py
+src/ida_pro_mcp/mcp-plugin.py
+src/ida_pro_mcp/server.py
+src/ida_pro_mcp.egg-info/PKG-INFO
+src/ida_pro_mcp.egg-info/SOURCES.txt
+src/ida_pro_mcp.egg-info/dependency_links.txt
+src/ida_pro_mcp.egg-info/entry_points.txt
+src/ida_pro_mcp.egg-info/requires.txt
+src/ida_pro_mcp.egg-info/top_level.txt
