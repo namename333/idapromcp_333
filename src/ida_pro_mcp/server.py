@@ -10,11 +10,80 @@ from urllib.parse import urlparse
 from mcp.server.fastmcp import FastMCP
 
 # log_level 对于 Cline 正常工作是必需的：https://github.com/jlowin/fastmcp/issues/81
-mcp = FastMCP("github.com/mrexodia/ida-pro-mcp", log_level="ERROR")
+mcp = FastMCP(
+    "github.com/namename333/idapromcp_333", 
+    log_level="ERROR"
+)
 
 jsonrpc_request_id = 1
-ida_host = "127.0.0.1"
-ida_port = 13337
+
+def get_config_file_path():
+    """
+    获取配置文件路径
+    支持多种配置文件位置
+    """
+    # 优先检查用户目录
+    user_dir = os.path.expanduser("~")
+    config_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_config.json"),
+        os.path.join(user_dir, ".mcp_config.json"),
+        os.path.join(user_dir, "mcp_config.json")
+    ]
+    
+    # 检查是否存在IDA插件目录下的配置文件
+    try:
+        import ida_idaapi
+        plugin_dir = ida_idaapi.idadir("plugins")
+        config_paths.append(os.path.join(plugin_dir, "mcp_config.json"))
+    except ImportError:
+        pass  # 如果不在IDA环境中运行，忽略
+    
+    # 返回第一个存在的配置文件
+    for path in config_paths:
+        if os.path.exists(path):
+            return path
+    
+    # 如果没有找到配置文件，返回默认路径
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_config.json")
+
+def load_config():
+    """
+    加载配置文件
+    返回配置字典，如果配置文件不存在则返回默认配置
+    """
+    default_config = {
+        "host": "127.0.0.1",
+        "port": 13337
+    }
+    
+    config_path = get_config_file_path()
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                user_config = json.load(f)
+                # 合并默认配置和用户配置
+                default_config.update(user_config)
+        except Exception as e:
+            print(f"警告: 加载配置文件失败: {e}")
+    
+    # 从环境变量覆盖配置
+    if "MCP_HOST" in os.environ:
+        default_config["host"] = os.environ["MCP_HOST"]
+    
+    if "MCP_PORT" in os.environ:
+        try:
+            default_config["port"] = int(os.environ["MCP_PORT"])
+        except ValueError:
+            print("警告: 环境变量MCP_PORT不是有效的端口号")
+    
+    return default_config
+
+# 加载配置
+config = load_config()
+
+# 服务器配置
+ida_host = config["host"]
+ida_port = config["port"]
 
 def make_jsonrpc_request(method: str, *params):
     """Make a JSON-RPC request to the IDA plugin"""
@@ -67,7 +136,7 @@ def check_connection() -> str:
             shortcut = "Ctrl+Alt+M"
         return f"无法连接到 IDA Pro! 您是否运行了 Edit -> Plugins -> MCP ({shortcut}) 启动服务器？"
 
-# Code taken from https://github.com/mrexodia/ida-pro-mcp (MIT License)
+# Code taken from https://github.com/namename333/idapromcp_333 (MIT License)
 class MCPVisitor(ast.NodeVisitor):
     def __init__(self):
         self.types: dict[str, ast.ClassDef] = {}
@@ -162,12 +231,13 @@ module = ast.parse(code, IDA_PLUGIN_PY)
 visitor = MCPVisitor()
 visitor.visit(module)
 code = """# NOTE: This file has been automatically generated, do not modify!
-# Architecture based on https://github.com/mrexodia/ida-pro-mcp (MIT License)
+# Architecture based on https://github.com/namename333/idapromcp_333 (MIT License)
 import sys
 if sys.version_info >= (3, 12):
-    from typing import Annotated, Optional, TypedDict, Generic, TypeVar, NotRequired
+    from typing import Annotated, Optional, TypedDict, Generic, TypeVar, NotRequired, Union
 else:
     from typing_extensions import Annotated, Optional, TypedDict, Generic, TypeVar, NotRequired
+    from typing import Union
 from pydantic import Field
 
 T = TypeVar("T")
@@ -179,17 +249,31 @@ for type in visitor.types.values():
 for function in visitor.functions.values():
     code += ast.unparse(function)
     code += "\n\n"
+
+print("Code generation complete. Writing to file...")
+try:
+    with open(GENERATED_PY, "w", encoding="utf-8") as f:
+        f.write(code)
+    print(f"Successfully wrote to {GENERATED_PY}")
+except Exception as e:
+    print(f"Failed to write file: {e}")
+    raise
+
+print("Compiling and executing...")
 with open(GENERATED_PY, "w", encoding="utf-8") as f:
     f.write(code)
 exec(compile(code, GENERATED_PY, "exec"))
 
-MCP_FUNCTIONS = ["check_connection"] + list(visitor.functions.keys())
+# 所有可用的 MCP 函数列表 - 确保包含标准MCP协议接口
+MCP_FUNCTIONS = ["check_connection", "get_methods"] + list(visitor.functions.keys())
 UNSAFE_FUNCTIONS = visitor.unsafe
 
 def generate_readme():
     print("README:")
     print(f"- `check_connection()`: 检查 IDA 插件是否正在运行。")
     def get_description(name: str):
+        if name not in visitor.functions:
+            return f"- `{name}()`: <函数未定义>"
         function = visitor.functions[name]
         signature = function.name + "("
         for i, arg in enumerate(function.args.args):
@@ -198,25 +282,24 @@ def generate_readme():
             signature += arg.arg
         signature += ")"
         description = visitor.descriptions.get(function.name, "<无描述>").strip()
-        if description[-1] != ".":
+        if description and description[-1] != ".":
             description += "."
         return f"- `{signature}`: {description}"
+    # 只处理有描述的函数
     for safe_function in MCP_FUNCTIONS: # Changed from SAFE_FUNCTIONS to MCP_FUNCTIONS
-        print(get_description(safe_function))
+        if safe_function in visitor.functions:
+            print(get_description(safe_function))
     print("\n不安全函数 (`--unsafe` 标志需要)`:\n")
     for unsafe_function in UNSAFE_FUNCTIONS:
-        print(get_description(unsafe_function))
+        if unsafe_function in visitor.functions:
+            print(get_description(unsafe_function))
     print("\nMCP 配置:")
     mcp_config = {
         "mcpServers": {
-            "github.com/mrexodia/ida-pro-mcp": {
-            "command": "uv",
+            "github.com/namename333/idapromcp_333": {
+            "command": get_python_executable(),
             "args": [
-                "--directory",
-                "c:\\MCP\\ida-pro-mcp",
-                "run",
-                "server.py",
-                "--install-plugin"
+                __file__,
             ],
             "timeout": 1800,
             "disabled": False,
@@ -263,6 +346,8 @@ def print_mcp_config():
                     ],
                     "timeout": 1800,
                     "disabled": False,
+                    "protocolVersion": mcp.protocol_version,
+                    "paths": ["/jsonrpc", "/mcp"]
                 }
             }
         }, indent=2)
@@ -397,6 +482,71 @@ def install_ida_plugin(*, uninstall: bool = False, quiet: bool = False):
             if not quiet:
                 print(f"安装 IDA Pro 插件 (需要重启 IDA)\n  插件: {plugin_destination}")
 
+def auto_run_ida_and_load_file(binary_path):
+    """自动启动 IDA Pro 并加载指定的二进制文件
+    
+    Args:
+        binary_path: 要分析的二进制文件路径
+    """
+    import subprocess
+    import time
+    import os
+    import platform
+    
+    # 确保文件存在
+    if not os.path.exists(binary_path):
+        print(f"错误: 无法找到文件 '{binary_path}'")
+        return
+    
+    # 获取 IDA Pro 可执行文件路径
+    ida_path = None
+    if platform.system() == "Windows":
+        # 尝试从常见位置查找 IDA Pro
+        possible_paths = [
+            os.path.join(os.getenv("ProgramFiles"), "IDA Pro 7.7", "ida64.exe"),
+            os.path.join(os.getenv("ProgramFiles"), "IDA Pro 7.8", "ida64.exe"),
+            os.path.join(os.getenv("ProgramFiles"), "IDA Pro 7.9", "ida64.exe"),
+            os.path.join(os.getenv("ProgramFiles"), "IDA Pro 8.0", "ida64.exe"),
+            os.path.join(os.getenv("ProgramFiles"), "IDA Pro 8.1", "ida64.exe"),
+            os.path.join(os.getenv("ProgramFiles"), "IDA Pro 9.1", "ida64.exe"),
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                ida_path = path
+                break
+        
+        # 如果没找到，提示用户指定路径
+        if ida_path is None:
+            ida_path = input("请输入 IDA Pro 可执行文件的完整路径 (例如: C:\\Program Files\\IDA Pro 9.1\\ida64.exe): ")
+            if not os.path.exists(ida_path):
+                print(f"错误: 无效的 IDA Pro 路径 '{ida_path}'")
+                return
+    else:
+        # Linux/Mac 系统
+        print("警告: 自动启动 IDA Pro 功能目前主要支持 Windows 系统")
+        ida_path = "ida64"
+    
+    print(f"正在启动 IDA Pro ({ida_path}) 并加载文件 '{binary_path}'...")
+    
+    try:
+        # 启动 IDA Pro 并加载二进制文件
+        subprocess.Popen([ida_path, binary_path])
+        
+        # 等待 IDA Pro 启动
+        print("IDA Pro 已启动，正在等待加载完成...")
+        time.sleep(10)  # 等待 10 秒，让 IDA 有足够时间加载
+        
+        print("\n提示:\n")
+        print("1. IDA Pro 已成功启动并加载了二进制文件")
+        print("2. 请在 IDA Pro 中手动启动 MCP 插件 (Edit -> Plugins -> MCP 或按 Ctrl-Alt-M)")
+        print("3. 启动 MCP 服务器以连接到 IDA Pro")
+        print("   命令: python -m ida_pro_mcp.server")
+        
+    except Exception as e:
+        print(f"启动 IDA Pro 时出错: {e}")
+        print("请确保 IDA Pro 已正确安装并且路径正确")
+
 def main():
     global ida_host, ida_port
     parser = argparse.ArgumentParser(description="IDA Pro MCP Server")
@@ -408,6 +558,7 @@ def main():
     parser.add_argument("--ida-rpc", type=str, default=f"http://{ida_host}:{ida_port}", help=f"IDA RPC 服务器 (默认: http://{ida_host}:{ida_port})")
     parser.add_argument("--unsafe", action="store_true", help="启用不安全函数 (危险)")
     parser.add_argument("--config", action="store_true", help="生成 MCP 配置 JSON")
+    parser.add_argument("--auto-run-ida", type=str, help="自动启动 IDA Pro 并加载指定的二进制文件")
     args = parser.parse_args()
 
     if args.install and args.uninstall:
@@ -435,6 +586,11 @@ def main():
 
     if args.config:
         print_mcp_config()
+        return
+
+    # 自动启动 IDA Pro 并加载二进制文件
+    if args.auto_run_ida:
+        auto_run_ida_and_load_file(args.auto_run_ida)
         return
 
     # Parse IDA RPC server argument

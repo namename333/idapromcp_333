@@ -1,3 +1,0 @@
-[console_scripts]
-ida-pro-mcp = ida_pro_mcp.server:main
-idalib-mcp = ida_pro_mcp.idalib_server:main

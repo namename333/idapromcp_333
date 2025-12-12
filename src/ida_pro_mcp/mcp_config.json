@@ -1,0 +1,16 @@
+{
+    "host": "127.0.0.1",
+    "port": 13338,
+    "script_utils_path": "script_utils.py",
+    "plugin": {
+        "port": 13338,
+        "auto_reuse": true,
+        "auto_select_port": true
+    },
+    "simple_server": {
+        "port": 13338
+    },
+    "idalib_server": {
+        "port": 8746
+    }
+}

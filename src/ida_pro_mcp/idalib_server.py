@@ -3,6 +3,8 @@ import inspect
 import logging
 import argparse
 import importlib
+import os
+import json
 from pathlib import Path
 import typing_inspection.introspection as intro
 
@@ -16,7 +18,74 @@ import ida_hexrays
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("github.com/mrexodia/ida-pro-mcp#idalib")
+mcp = FastMCP("github.com/namename333/idapromcp_333#idalib")
+
+def get_config_file_path():
+    """
+    获取配置文件路径
+    支持多种配置文件位置
+    """
+    # 优先检查用户目录
+    user_dir = os.path.expanduser("~")
+    config_paths = [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_config.json"),
+        os.path.join(user_dir, ".mcp_config.json"),
+        os.path.join(user_dir, "mcp_config.json")
+    ]
+    
+    # 检查是否存在IDA插件目录下的配置文件
+    try:
+        import ida_idaapi
+        plugin_dir = ida_idaapi.idadir("plugins")
+        config_paths.append(os.path.join(plugin_dir, "mcp_config.json"))
+    except ImportError:
+        pass  # 如果不在IDA环境中运行，忽略
+    
+    # 返回第一个存在的配置文件
+    for path in config_paths:
+        if os.path.exists(path):
+            return path
+    
+    # 如果没有找到配置文件，返回默认路径
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "mcp_config.json")
+
+def load_config():
+    """
+    加载配置文件
+    返回配置字典，如果配置文件不存在则返回默认配置
+    """
+    default_config = {
+        "host": "127.0.0.1",
+        "port": 8745  # idalib服务器默认端口为8745
+    }
+    
+    config_path = get_config_file_path()
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                user_config = json.load(f)
+                # 合并默认配置和用户配置
+                default_config.update(user_config)
+        except Exception as e:
+            print(f"警告: 加载配置文件失败: {e}")
+    
+    # 从环境变量覆盖配置（使用IDALIB_MCP_PORT区分）
+    if "MCP_HOST" in os.environ:
+        default_config["host"] = os.environ["MCP_HOST"]
+    
+    if "IDALIB_MCP_PORT" in os.environ:
+        try:
+            default_config["port"] = int(os.environ["IDALIB_MCP_PORT"])
+        except ValueError:
+            print("警告: 环境变量IDALIB_MCP_PORT不是有效的端口号")
+    elif "MCP_PORT" in os.environ:
+        # 如果没有指定IDALIB_MCP_PORT，也可以使用通用的MCP_PORT
+        try:
+            default_config["port"] = int(os.environ["MCP_PORT"])
+        except ValueError:
+            print("警告: 环境变量MCP_PORT不是有效的端口号")
+    
+    return default_config
 
 def fixup_tool_argument_descriptions(mcp: FastMCP):
     # 在`mcp-plugin.py`的工具定义中，我们在函数参数上使用`typing.Annotated`
@@ -102,10 +171,13 @@ def fixup_tool_argument_descriptions(mcp: FastMCP):
             tool.parameters["properties"][name]["description"] = description
 
 def main():
+    # 先加载配置文件，作为命令行参数的默认值
+    config = load_config()
+    
     parser = argparse.ArgumentParser(description="MCP server for IDA Pro via idalib")
     parser.add_argument("--verbose", "-v", action="store_true", help="Show debug messages")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host to listen on, default: 127.0.0.1")
-    parser.add_argument("--port", type=int, default=8745, help="Port to listen on, default: 8745")
+    parser.add_argument("--host", type=str, default=config["host"], help=f"Host to listen on, default: {config['host']}")
+    parser.add_argument("--port", type=int, default=config["port"], help=f"Port to listen on, default: {config['port']}")
     parser.add_argument("input_path", type=Path, help="Path to the input file to analyze.")
     args = parser.parse_args()
 
