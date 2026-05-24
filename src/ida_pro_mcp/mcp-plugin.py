@@ -13,7 +13,7 @@ import struct
 import threading
 import http.server
 from urllib.parse import urlparse
-from typing import Any, Callable, get_type_hints, TypedDict, Optional, Annotated, TypeVar, Generic, NotRequired
+from typing import Any, Callable, get_type_hints, TypedDict, Optional, Annotated, TypeVar, Generic, NotRequired, Union
 import re
 import time
 import tempfile
@@ -94,8 +94,16 @@ class RPCRegistry:
 
 rpc_registry = RPCRegistry()
 
+# 注册 JSON-RPC 方法的装饰器
+def jsonrpc(func: Callable) -> Callable:
+    global rpc_registry
+    return rpc_registry.register(func)
+
+# 标记为不安全方法的装饰器
+def unsafe(func: Callable) -> Callable:
+    return rpc_registry.mark_unsafe(func)
+
 @jsonrpc
-@idaread
 def check_connection() -> dict:
     """
     标准MCP协议接口：检查与服务器的连接
@@ -110,7 +118,6 @@ def check_connection() -> dict:
     }
 
 @jsonrpc
-@idaread
 def get_methods() -> list[dict]:
     """
     获取所有可用的JSON-RPC方法列表及其元数据
@@ -142,15 +149,6 @@ def get_methods() -> list[dict]:
         methods_info.append(method_info)
     
     return methods_info
-
-# 注册 JSON-RPC 方法的装饰器
-def jsonrpc(func: Callable) -> Callable:
-    global rpc_registry
-    return rpc_registry.register(func)
-
-# 标记为不安全方法的装饰器
-def unsafe(func: Callable) -> Callable:
-    return rpc_registry.mark_unsafe(func)
 
 # JSON-RPC 请求处理器
 class JSONRPCRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -278,8 +276,6 @@ def get_config_file_path():
     3. IDA插件目录下的mcp_config.json
     """
     # 尝试多个配置文件位置，按优先级返回第一个存在的
-    import ida_idaapi
-    import pathlib
     
     # 获取可能的配置文件路径列表
     config_paths = []
@@ -292,7 +288,8 @@ def get_config_file_path():
     config_paths.append(os.path.join(user_home, ".mcp", "mcp_config.json"))
     
     # 3. IDA插件目录
-    plugin_dir = ida_idaapi.idadir("plugins")
+    # IDA 9.3 下 ida_idaapi.idadir 可能不存在，优先从当前插件文件路径反推。
+    plugin_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_paths.append(os.path.join(plugin_dir, "mcp_config.json"))
     
     # 返回第一个存在的配置文件
